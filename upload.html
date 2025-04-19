@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Image to MinIO</title>
+    <style>
+        #imagePreview {
+            margin-top: 20px;
+            border: 1px dashed #ccc;
+            padding: 10px;
+            min-height: 200px;
+        }
+        #imagePreview img {
+            max-width: 100%;
+            max-height: 400px;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+        }
+        .success {
+            color: green;
+            background-color: #e8f5e9;
+        }
+        .error {
+            color: red;
+            background-color: #ffebee;
+        }
+        .loading {
+            color: blue;
+            background-color: #e3f2fd;
+        }
+        #imageTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        #imageTable th, #imageTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #imageTable th {
+            background-color: #f2f2f2;
+        }
+        #imageTable img {
+            max-width: 100px;
+            max-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload Image to MinIO</h1>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" name="image" accept="image/*">
+        <button type="submit">Upload</button>
+    </form>
+    
+    <div id="status"></div>
+    
+    <!-- Add a div to display the uploaded image -->
+    <div id="imagePreview">
+        <h3>Uploaded Image:</h3>
+        <div id="imageContainer"></div>
+    </div>
+
+    <!-- Add a table to display all images -->
+    <div>
+        <h3>All Uploaded Images:</h3>
+        <table id="imageTable">
+            <thead>
+                <tr>
+                    <th>Preview</th>
+                    <th>Name</th>
+                    <th>Size</th>
+                    <th>Last Modified</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="imageTableBody">
+                <!-- Images will be loaded here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Function to load all images
+        function loadImages() {
+            fetch('/images')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.getElementById('imageTableBody');
+                    tableBody.innerHTML = '';
+                    
+                    if (data.images && data.images.length > 0) {
+                        data.images.forEach(image => {
+                            const row = document.createElement('tr');
+                            
+                            // Preview column
+                            const previewCell = document.createElement('td');
+                            const img = document.createElement('img');
+                            img.src = image.url;
+                            img.alt = image.name;
+                            previewCell.appendChild(img);
+                            
+                            // Name column
+                            const nameCell = document.createElement('td');
+                            nameCell.textContent = image.name;
+                            
+                            // Size column
+                            const sizeCell = document.createElement('td');
+                            sizeCell.textContent = formatFileSize(image.size);
+                            
+                            // Last Modified column
+                            const dateCell = document.createElement('td');
+                            dateCell.textContent = new Date(image.lastModified).toLocaleString();
+                            
+                            // Actions column
+                            const actionsCell = document.createElement('td');
+                            const viewLink = document.createElement('a');
+                            viewLink.href = image.url;
+                            viewLink.target = '_blank';
+                            viewLink.textContent = 'View';
+                            actionsCell.appendChild(viewLink);
+                            
+                            // Add cells to row
+                            row.appendChild(previewCell);
+                            row.appendChild(nameCell);
+                            row.appendChild(sizeCell);
+                            row.appendChild(dateCell);
+                            row.appendChild(actionsCell);
+                            
+                            // Add row to table
+                            tableBody.appendChild(row);
+                        });
+                    } else {
+                        const row = document.createElement('tr');
+                        const cell = document.createElement('td');
+                        cell.colSpan = 5;
+                        cell.textContent = 'No images found';
+                        cell.style.textAlign = 'center';
+                        row.appendChild(cell);
+                        tableBody.appendChild(row);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading images:', error);
+                });
+        }
+        
+        // Helper function to format file size
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            else if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+            else return (bytes / 1048576).toFixed(2) + ' MB';
+        }
+        
+        // Load images when page loads
+        document.addEventListener('DOMContentLoaded', loadImages);
+        
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = 'Uploading...';
+            statusDiv.className = 'loading';
+            
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                statusDiv.textContent = 'Please select a file first';
+                statusDiv.className = 'error';
+                return;
+            }
+            
+            // Create FormData object
+            const formData = new FormData();
+            formData.append('image', file);
+            
+            // Send the file to the server
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.textContent = data.message + ' Object name: ' + data.objectName;
+                    statusDiv.className = 'success';
+                    displayUploadedImage(data.url, data.objectName);
+                    
+                    // Reload the image table
+                    loadImages();
+                } else {
+                    statusDiv.textContent = data.error || 'Upload failed';
+                    statusDiv.className = 'error';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                statusDiv.textContent = 'Error uploading: ' + error.message;
+                statusDiv.className = 'error';
+            });
+        });
+        
+        function displayUploadedImage(imageUrl, objectName) {
+            const imageContainer = document.getElementById('imageContainer');
+            
+            // Create image element
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = objectName;
+            
+            // Clear previous image and add the new one
+            imageContainer.innerHTML = '';
+            imageContainer.appendChild(img);
+            
+            // Add link to view/download the original
+            const link = document.createElement('p');
+            link.innerHTML = `<a href="${imageUrl}" target="_blank">View/Download Original</a>`;
+            imageContainer.appendChild(link);
+        }
+    </script>
+</body>
+</html>
